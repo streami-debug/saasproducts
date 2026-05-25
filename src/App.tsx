@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { HelmetProvider, Helmet } from 'react-helmet-async';
 import { Header } from './components/shared/header';
 import { Footer } from './components/shared/footer';
+import { ChatBot } from './components/chat/ChatBot';
 import { HomePage } from './pages/HomePage';
 import { MarketplacePage } from './pages/MarketplacePage';
 import { TemplateDetailsPage } from './pages/TemplateDetailsPage';
@@ -24,6 +25,7 @@ export default function App() {
         <div className="relative min-h-screen flex flex-col justify-between overflow-x-hidden font-sans">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[500px] bg-gradient-to-b from-brand-purple/10 to-transparent blur-[120px] pointer-events-none" />
           <Header />
+          <ChatBot />
           <main className="flex-grow z-10">
             <Routes>
               <Route path="/" element={<HomePage />} />
