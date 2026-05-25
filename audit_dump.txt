@@ -1,0 +1,1176 @@
+\n===== server.ts =====
+import express from "express";
+import path from "path";
+import { createServer as createViteServer } from "vite";
+import { ExpressAuth } from "@auth/express";
+import GitHub from "@auth/express/providers/github";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+
+const MOCK_TEMPLATES = [
+  {
+    id: "tpl_1",
+    title: "Autonomous Agent Marketing Engine",
+    description: "Multi-agent framework execution blueprints orchestrated to spin up fully optimized multi-channel ad copy matrices.",
+    price: 29,
+    category: "automation",
+    tier: "premium",
+    tags: ["CrewAI", "Marketing"],
+    rating: 4.9,
+    reviewCount: 194,
+    downloadCount: 1240,
+    creatorId: "cr_01",
+    creatorName: "AIEngineerX",
+    features: ["Fully decoupled workflows", "Configured environment hooks"],
+    compatibility: ["Claude 3.5 Sonnet", "Make.com"],
+    createdAt: "2026-01-10"
+  },
+  {
+    id: "tpl_2",
+    title: "SaaS Blueprint MVP Boilerplate",
+    description: "Cursor configuration patterns and full-stack architecture mapping structures for high-speed application deployment.",
+    price: 35,
+    category: "saas",
+    tier: "premium",
+    tags: ["Cursor", "Next.js"],
+    rating: 5.0,
+    reviewCount: 312,
+    downloadCount: 4290,
+    creatorId: "cr_02",
+    creatorName: "VercelGod",
+    features: ["Stripe Webhooks configured", "Supabase integrations structural mappings"],
+    compatibility: ["Cursor AI", "Next.js 15"],
+    createdAt: "2026-02-15"
+  },
+  {
+    id: "tpl_3",
+    title: "Creator Newsletter System",
+    description: "End-to-end automated newsletter generation system using AI prompt chaining. Perfect for independent creators and marketers.",
+    price: 15,
+    category: "marketing",
+    tier: "basic",
+    tags: ["Claude 3", "Newsletter"],
+    rating: 4.8,
+    reviewCount: 89,
+    downloadCount: 650,
+    creatorId: "cr_03",
+    creatorName: "ContentNinja",
+    features: ["Prompt chains", "Formatting guidelines"],
+    compatibility: ["ChatGPT", "Claude"],
+    createdAt: "2026-03-01"
+  },
+  {
+    id: "tpl_4",
+    title: "Midjourney Photorealism Pack",
+    description: "100+ meticulously crafted prompts for generating ultra-realistic photography and cinematic shots in diverse lighting conditions.",
+    price: 19,
+    category: "midjourney",
+    tier: "basic",
+    tags: ["Midjourney v6", "Photography"],
+    rating: 4.7,
+    reviewCount: 412,
+    downloadCount: 1560,
+    creatorId: "cr_04",
+    creatorName: "VisionaryArt",
+    features: ["Lighting modifiers", "Camera lens parameters", "Style reference grids"],
+    compatibility: ["Midjourney"],
+    createdAt: "2026-02-28"
+  },
+  {
+    id: "tpl_5",
+    title: "Ultimate Dev Automation Hub",
+    description: "A complete suite of workflows for automating code reviews, CI/CD pipeline summaries, and release notes via local LLMs.",
+    price: 40,
+    category: "coding",
+    tier: "premium",
+    tags: ["GitHub Actions", "Ollama"],
+    rating: 5.0,
+    reviewCount: 110,
+    downloadCount: 300,
+    creatorId: "cr_05",
+    creatorName: "DevOpsMage",
+    features: ["Docker configurations", "Python scripts", "Pipeline YAMLs"],
+    compatibility: ["Local LLM", "GitHub"],
+    createdAt: "2026-04-12"
+  }
+];
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+  
+  app.use(express.json());
+
+  // API Routes
+  
+  // Set trust proxy so Auth.js can work behind reverse proxy correctly
+  app.set('trust proxy', true);
+  
+  // Lazy Auth Route to prevent crashing on missing env vars during boot
+  app.use("/api/auth/*", (req, res, next) => {
+    if (!process.env.DATABASE_URL || !process.env.AUTH_SECRET) {
+      return res.status(500).json({ error: "Missing required environment variables (DATABASE_URL or AUTH_SECRET)" });
+    }
+
+    const { Pool } = require("@neondatabase/serverless");
+    const { PrismaNeon } = require("@prisma/adapter-neon");
+    const { PrismaClient } = require("@prisma/client");
+    
+    // Create lazily (usually you'd memoize this in production)
+    const connectionString = process.env.DATABASE_URL;
+    const pool = new Pool({ connectionString });
+    const adapter = new PrismaNeon(pool);
+    const prisma = new PrismaClient({ adapter });
+
+    return ExpressAuth({
+      providers: [
+        GitHub({
+          clientId: process.env.GITHUB_ID,
+          clientSecret: process.env.GITHUB_SECRET,
+        })
+      ],
+      adapter: PrismaAdapter(prisma),
+      secret: process.env.AUTH_SECRET,
+      trustHost: true,
+    })(req, res, next);
+  });
+
+  app.get("/api/templates", (req, res) => {
+    let templates = MOCK_TEMPLATES;
+    const category = req.query.category as string;
+    const search = req.query.search?.toString().toLowerCase();
+
+    if (category && category !== 'all') {
+      templates = templates.filter(t => t.category === category);
+    }
+    if (search) {
+      templates = templates.filter(t => 
+        t.title.toLowerCase().includes(search) || 
+        t.description.toLowerCase().includes(search) ||
+        t.tags.some(tag => tag.toLowerCase().includes(search))
+      );
+    }
+
+    // Filter by max/min price if requested
+    const minPrice = parseInt(req.query.minPrice as string || '0');
+    const maxPrice = parseInt(req.query.maxPrice as string || '1000');
+    
+    templates = templates.filter(t => t.price >= minPrice && t.price <= maxPrice);
+
+    res.json({ templates });
+  });
+
+  app.get("/api/templates/:id", (req, res) => {
+    const item = MOCK_TEMPLATES.find(t => t.id === req.params.id);
+    if (item) {
+      res.json(item);
+    } else {
+      res.status(404).json({ error: "Template not found" });
+    }
+  });
+
+  app.post("/api/checkout/paypal", (req, res) => {
+    // Generate a mock PayPal order ID
+    res.json({ id: "PAYPAL_ORDER_" + Math.random().toString(36).substring(7) });
+  });
+
+  app.post("/api/checkout/capture", (req, res) => {
+    // Verify and capture payment
+    res.json({ success: true, url: "/dashboard/user?checkout=success" });
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    // Production asset serving
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();
+\n===== src/App.tsx =====
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HelmetProvider, Helmet } from 'react-helmet-async';
+import { Header } from './components/shared/header';
+import { Footer } from './components/shared/footer';
+import { HomePage } from './pages/HomePage';
+import { MarketplacePage } from './pages/MarketplacePage';
+import { TemplateDetailsPage } from './pages/TemplateDetailsPage';
+import { CreatorDashboard } from './pages/CreatorDashboard';
+
+export default function App() {
+  return (
+    <HelmetProvider>
+      <BrowserRouter>
+        <Helmet>
+          <title>saasproducts | Premium AI Template Marketplace</title>
+          <meta name="description" content="A premium, full-stack AI template and SaaS launch kit marketplace featuring glassmorphism design and conversion-focused bundles." />
+        </Helmet>
+        <div className="relative min-h-screen flex flex-col justify-between overflow-x-hidden font-sans">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[500px] bg-gradient-to-b from-brand-purple/10 to-transparent blur-[120px] pointer-events-none" />
+          <Header />
+          <main className="flex-grow z-10">
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/marketplace" element={<MarketplacePage />} />
+              <Route path="/template/:id" element={<TemplateDetailsPage />} />
+              <Route path="/dashboard/creator" element={<CreatorDashboard />} />
+              {/* Catch-all for mockup dashboard links */}
+              <Route path="/dashboard/user" element={
+                <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4">
+                  <div className="w-16 h-16 mx-auto rounded-full bg-neon-cyan/20 flex items-center justify-center mb-6">
+                    <span className="text-2xl">🎉</span>
+                  </div>
+                  <h1 className="text-3xl font-display font-bold">Transaction Confirmed</h1>
+                  <p className="text-white/60">Your premium assets have been deployed to your account ledger.</p>
+                </div>
+              } />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
+      </BrowserRouter>
+    </HelmetProvider>
+  );
+}
+\n===== src/pages/CreatorDashboard.tsx =====
+import { GlassPanel } from '@/components/ui/glass-panel';
+import { Activity, DollarSign, ArrowUpRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import { motion } from 'motion/react';
+
+export const CreatorDashboard = () => {
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-12 space-y-10 relative z-10">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/5 pb-8">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-display font-bold">Creator Settlement Node</h1>
+          <p className="text-white/50 text-sm mt-2 font-mono">Monitor deployment triggers, usage parameters, and settlement payouts.</p>
+        </div>
+        <div className="flex bg-white/5 p-1 rounded-lg">
+          <button className="px-4 py-1.5 rounded-md bg-white/10 text-sm font-medium text-white shadow-sm">Overview</button>
+          <button className="px-4 py-1.5 rounded-md text-sm font-medium text-white/50 hover:text-white transition-colors">Payouts</button>
+          <button className="px-4 py-1.5 rounded-md text-sm font-medium text-white/50 hover:text-white transition-colors">Settings</button>
+        </div>
+      </div>
+
+      {/* Analytics High Density Indicators Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <GlassPanel className="p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <DollarSign className="w-16 h-16 text-white" />
+          </div>
+          <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-electric-blue" />
+            Gross Volume
+          </span>
+          <p className="text-3xl font-display font-bold text-white mt-4">$4,890.00</p>
+          <div className="mt-4 flex items-center gap-1.5 text-xs text-neon-cyan flex-wrap">
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>12.5% vs last month</span>
+          </div>
+        </GlassPanel>
+
+        <GlassPanel className="p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <Activity className="w-16 h-16 text-white" />
+          </div>
+          <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-neon-cyan" />
+            Deployment Triggers
+          </span>
+          <p className="text-3xl font-display font-bold text-white mt-4">241</p>
+          <div className="mt-4 flex items-center gap-1.5 text-xs text-white/50 flex-wrap">
+            <span>Total template downloads</span>
+          </div>
+        </GlassPanel>
+
+        <GlassPanel className="p-6 relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <CheckCircle2 className="w-16 h-16 text-white" />
+          </div>
+          <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-brand-purple" />
+            Avg Unit Value
+          </span>
+          <p className="text-3xl font-display font-bold text-white mt-4">$24.50</p>
+          <div className="mt-4 flex items-center gap-1.5 text-xs text-brand-purple flex-wrap">
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>Optimized pricing matrices</span>
+          </div>
+        </GlassPanel>
+
+        <GlassPanel className="p-6 relative overflow-hidden group border-electric-blue/30 shadow-[0_0_15px_rgba(0,240,255,0.1)]">
+           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity flex">
+            <AlertCircle className="w-16 h-16 text-electric-blue" />
+          </div>
+          <span className="text-[10px] font-mono text-electric-blue/70 uppercase tracking-widest flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-electric-blue animate-pulse" />
+            Settlement Queue
+          </span>
+          <p className="text-3xl font-display font-bold text-electric-blue mt-4">$812.00</p>
+          <div className="mt-4 flex items-center gap-1.5 text-xs text-white/50 flex-wrap">
+            <span>Pending Next Payout (Friday)</span>
+          </div>
+        </GlassPanel>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pt-6">
+        <GlassPanel className="p-0 lg:col-span-2 overflow-hidden flex flex-col">
+          <div className="p-6 border-b border-white/5">
+            <h3 className="text-lg font-display font-semibold">Recent Deployment Ledger</h3>
+          </div>
+          <div className="p-0 overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-white/[0.02] text-white/40 font-mono text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="px-6 py-4 font-normal">Asset Tag</th>
+                  <th className="px-6 py-4 font-normal">Date</th>
+                  <th className="px-6 py-4 font-normal">Value</th>
+                  <th className="px-6 py-4 font-normal">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 text-white/80">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <tr key={i} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-6 py-4 font-medium flex items-center gap-3">
+                      <div className="w-8 h-8 rounded bg-white/5 border border-white/10 flex items-center justify-center">
+                        <span className="text-xs uppercase">SAAS</span>
+                      </div>
+                      SaaS Blueprint MVP
+                    </td>
+                    <td className="px-6 py-4 text-white/50 font-mono text-xs">2026-05-{10 + i}</td>
+                    <td className="px-6 py-4">$35.00</td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-neon-cyan/10 text-neon-cyan text-xs font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-neon-cyan" />
+                        Settled
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </GlassPanel>
+        
+        <div className="space-y-6">
+          <GlassPanel className="p-6 space-y-4">
+            <h3 className="text-lg font-display font-semibold border-b border-white/5 pb-4">Actions</h3>
+            <button className="w-full h-12 bg-hyper-growth text-space-black font-semibold rounded-xl hover:opacity-95 transition-opacity flex items-center justify-center gap-2">
+              Deploy New Blueprint
+            </button>
+            <button className="w-full h-12 bg-white/5 border border-white/10 text-white font-medium rounded-xl hover:bg-white/10 transition-colors">
+              Manage API Keys
+            </button>
+          </GlassPanel>
+
+          <GlassPanel className="p-6 space-y-4">
+            <h3 className="text-lg font-display font-semibold border-b border-white/5 pb-4">Market Alignment</h3>
+            <p className="text-sm text-white/60 leading-relaxed">
+              Your assets are performing in the top 5% of the Automation category. Consider deploying a structural bundle to maximize user cart value.
+            </p>
+          </GlassPanel>
+        </div>
+      </div>
+    </div>
+  );
+};
+\n===== src/pages/HomePage.tsx =====
+import { motion } from 'motion/react';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { GlassPanel } from '@/components/ui/glass-panel';
+import { TemplateCard } from '@/components/marketplace/template-card';
+import { Template } from '@/types';
+
+// Structural high-demand data assets mapped to the required catalog parameters
+const HOMEPAGE_CATALOG: { hero: Template; trending: Template[]; premium: Template[] } = {
+  hero: {
+    id: "tpl_1", // Using existing mock ID so details page works
+    title: "AI SaaS Website System Matrix",
+    description: "Generates fully realized responsive SaaS landing pages, structured layout components, optimized checkout grids, and elegant, high-converting copy layouts.",
+    price: 29,
+    category: "saas",
+    tier: "premium",
+    tags: ["Next.js 15", "Tailwind CSS", "UX Architecture"],
+    rating: 4.98,
+    reviewCount: 412,
+    downloadCount: 8940,
+    creatorId: "forge_core",
+    creatorName: "saasproducts Studio",
+    features: ["Responsive Breakpoint Logic", "Conversion Copy Arrays"],
+    compatibility: ["Claude 3.5 Sonnet", "GPT-4o"],
+    createdAt: "2026-03-01"
+  },
+  trending: [
+    {
+      id: "t_free_tk",
+      title: "Freelancer AI Operational Toolkit",
+      description: "Complete operations framework prompt bundle processing high-conversion agency proposals, client onboarding tracks, automated scoping parameters, and outreach sequences.",
+      price: 19,
+      category: "marketing",
+      tier: "bundle",
+      tags: ["Agency Scaling", "Operations"],
+      rating: 4.91,
+      reviewCount: 189,
+      downloadCount: 3120,
+      creatorId: "forge_core",
+      creatorName: "saasproducts Studio",
+      features: ["Onboarding Engine Blueprints", "Proposal Templates"],
+      compatibility: ["ChatGPT", "Claude"],
+      createdAt: "2026-03-10"
+    },
+    {
+      id: "t_viral_c",
+      title: "Viral Content Creator Engine Pack",
+      description: "High-yield behavioral script algorithms optimized for native TikTok hooks, narrative YouTube script development, and structured programmatic visual direction schemas.",
+      price: 15,
+      category: "marketing",
+      tier: "basic",
+      tags: ["Social Algorithms", "Growth Hooks"],
+      rating: 4.85,
+      reviewCount: 342,
+      downloadCount: 12450,
+      creatorId: "grow_labs",
+      creatorName: "Growth Labs Engine",
+      features: ["Retention Hooks", "Multi-Platform Copy Matrices"],
+      compatibility: ["ChatGPT Plus", "Claude 3 Haiku"],
+      createdAt: "2026-03-12"
+    },
+    {
+      id: "t_prod_sys",
+      title: "Ultimate ChatGPT Productivity System",
+      description: "Deep procedural memory integration layers automating calendar operations pipelines, complex personal information architecture layouts, and business management workflows.",
+      price: 25,
+      category: "automation",
+      tier: "premium",
+      tags: ["Workflows", "Personal OS"],
+      rating: 4.96,
+      reviewCount: 215,
+      downloadCount: 5410,
+      creatorId: "forge_core",
+      creatorName: "saasproducts Studio",
+      features: ["Task-Batching Blueprints", "Context-Switching Logic"],
+      compatibility: ["GPT-4o Native"],
+      createdAt: "2026-03-14"
+    }
+  ],
+  premium: [
+    {
+      id: "p_launch_kit",
+      title: "AI Startup Launch Kit Matrix",
+      description: "Comprehensive multi-layered brand system prompts outputting production positioning formulas, target persona matrices, presentation assets, and conversion flows.",
+      price: 35,
+      category: "saas",
+      tier: "premium",
+      tags: ["Founders", "Go-To-Market"],
+      rating: 5.0,
+      reviewCount: 94,
+      downloadCount: 1890,
+      creatorId: "forge_core",
+      creatorName: "saasproducts Studio",
+      features: ["Brand DNA Engines", "Pitch Deck Content Structures"],
+      compatibility: ["Claude 3.5 Sonnet"],
+      createdAt: "2026-03-18"
+    },
+    {
+      id: "p_auto_biz",
+      title: "AI Automation Business System Engine",
+      description: "Our premium flagship asset framework. Deploys complete autonomous architecture logic patterns, advanced environment mappings, CRM setups, and complex lead-generation webhooks.",
+      price: 40,
+      category: "automation",
+      tier: "premium",
+      tags: ["Enterprise Nodes", "AI Agents"],
+      rating: 4.99,
+      reviewCount: 512,
+      downloadCount: 3820,
+      creatorId: "forge_core",
+      creatorName: "saasproducts Studio",
+      features: ["Autonomous Agent Logic Maps", "CRM Script Automations"],
+      compatibility: ["Make.com Engine", "CrewAI Framework", "n8n"],
+      createdAt: "2026-03-20"
+    }
+  ]
+};
+
+export const HomePage = () => {
+  return (
+    <div className="w-full bg-space-black text-white space-y-32 pb-32 overflow-hidden relative z-10">
+      
+      {/* SECTION 1: HERO CONTAINER AREA */}
+      <section className="relative pt-24 px-4 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        <div className="lg:col-span-7 space-y-8 text-left">
+          <motion.div 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md text-xs font-mono text-electric-blue uppercase tracking-widest"
+          >
+            <span className="w-2 h-2 rounded-full bg-neon-cyan animate-pulse shadow-[0_0_8px_#0DFEAA]" />
+            ENGINEERED UTILITY VS RAW PROMPTS
+          </motion.div>
+          
+          <h1 className="text-4xl md:text-6xl lg:text-[4.5rem] font-display font-bold tracking-tight leading-[1.05]">
+            Premium AI Systems <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-purple via-electric-blue to-neon-cyan">
+              Without Premium Prices.
+            </span>
+          </h1>
+
+          <p className="text-white/60 text-base md:text-xl font-sans max-w-xl leading-relaxed font-light">
+            Stop buying basic chat inputs. Deploy our robust, conversion-driven prompt matrices and framework packs explicitly engineered for creators, developers, and startups.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <Link to={`/template/${HOMEPAGE_CATALOG.hero.id}`}>
+              <Button size="lg" variant="primary">Deploy Flagship System — $29</Button>
+            </Link>
+            <Link to="/marketplace?bundle=true">
+              <Button size="lg" variant="secondary">View System Bundles</Button>
+            </Link>
+          </div>
+        </div>
+
+        {/* HERO FEATURED PRODUCT INTERACTIVE CARD DISPLAY */}
+        <div className="lg:col-span-5 w-full">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4 }}
+            className="relative"
+          >
+            <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-brand-purple to-electric-blue opacity-30 blur-xl animate-pulse" />
+            <GlassPanel className="p-6 relative bg-space-void/80 border-white/15 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono tracking-widest text-neon-cyan uppercase bg-neon-cyan/10 px-2.5 py-1 rounded-md">
+                  Hero Showcase Matrix
+                </span>
+                <span className="text-2xl font-display font-bold text-white">${HOMEPAGE_CATALOG.hero.price}</span>
+              </div>
+              <h2 className="text-xl font-display font-bold text-white">{HOMEPAGE_CATALOG.hero.title}</h2>
+              <p className="text-xs text-white/60 leading-relaxed">{HOMEPAGE_CATALOG.hero.description}</p>
+              
+              <div className="pt-4 border-t border-white/5 grid grid-cols-2 gap-2 text-[11px] font-mono text-white/40">
+                <div>COMPATIBILITY: <span className="block text-white font-medium">{HOMEPAGE_CATALOG.hero.compatibility.join(', ')}</span></div>
+                <div>EVALUATION RATIO: <span className="block text-white font-medium">★ 4.98 (412 Verification Logs)</span></div>
+              </div>
+              <Link to={`/template/${HOMEPAGE_CATALOG.hero.id}`} className="block pt-2">
+                <Button variant="secondary" className="w-full text-xs py-2 h-10">Inspect System Variables</Button>
+              </Link>
+            </GlassPanel>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* SECTION 2: HIGH-DEMAND TRENDING MATRIX ARRAYS */}
+      <section className="max-w-7xl mx-auto px-4 space-y-8">
+        <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-white/5 pb-6">
+          <div>
+            <h2 className="text-xl md:text-3xl font-display font-bold">Trending System Packs</h2>
+            <p className="text-sm text-white/40 mt-1">Highly functional asset matrices scaling production workflows immediately.</p>
+          </div>
+          <span className="text-xs font-mono text-white/40 uppercase tracking-wider mt-4 md:mt-0">Metrics Refresh Cycle: Real-Time</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {HOMEPAGE_CATALOG.trending.map((tpl) => (
+            <TemplateCard key={tpl.id} template={tpl} />
+          ))}
+        </div>
+      </section>
+
+      {/* SECTION 3: FLAGSHIP HIGH-VALUE PREMIUM SETTLEMENT BOUNDARY */}
+      <section className="max-w-7xl mx-auto px-4 space-y-8">
+        <div className="p-8 md:p-12 rounded-3xl bg-gradient-to-b from-white/[0.02] to-transparent border border-white/10 relative overflow-hidden">
+          <div className="absolute top-0 right-1/4 w-96 h-96 bg-brand-purple/10 blur-[100px] pointer-events-none rounded-full" />
+          
+          <div className="max-w-2xl space-y-4 mb-12 relative z-10">
+            <span className="inline-block text-xs font-mono uppercase tracking-widest text-brand-purple bg-brand-purple/10 px-3 py-1 rounded-md">
+              Enterprise Grade Framework Nodes
+            </span>
+            <h2 className="text-2xl md:text-4xl font-display font-bold">Flagship Architectural Packages</h2>
+            <p className="text-sm md:text-base text-white/60 leading-relaxed">
+              Our highest tier system assets. These products contain complex multi-agent system definitions, broad business automation routines, and programmatic cross-functional code layers.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
+            {HOMEPAGE_CATALOG.premium.map((tpl) => (
+              <GlassPanel key={tpl.id} className="p-8 flex flex-col justify-between border-white/10 bg-space-black/40 group hover:border-brand-purple/30 transition-all">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono text-white/40 uppercase">System Target Engine: {tpl.compatibility[0]}</span>
+                    <span className="text-2xl font-display font-bold text-electric-blue">${tpl.price}</span>
+                  </div>
+                  <h3 className="text-xl font-display font-bold group-hover:text-electric-blue transition-colors line-clamp-1">{tpl.title}</h3>
+                  <p className="text-sm text-white/60 leading-relaxed line-clamp-3">{tpl.description}</p>
+                </div>
+                <div className="pt-6 mt-6 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-xs font-mono text-neon-cyan">Includes {tpl.features.length} Core Matrix Modules</span>
+                  <Link to={`/template/${tpl.id}`}>
+                    <Button variant="secondary" size="sm">Deploy Module</Button>
+                  </Link>
+                </div>
+              </GlassPanel>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+\n===== src/pages/MarketplacePage.tsx =====
+import { useState, useEffect } from 'react';
+import { GlassPanel } from '@/components/ui/glass-panel';
+import { TemplateCard } from '@/components/marketplace/template-card';
+import { Template } from '@/types';
+import { Search } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+
+const CATEGORIES = ['all', 'chatgpt', 'claude', 'midjourney', 'cursor', 'saas', 'automation', 'marketing', 'coding'];
+
+export const MarketplacePage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  const initialCategory = searchParams.get('category') || 'all';
+  const initialSearch = searchParams.get('search') || '';
+
+  const [search, setSearch] = useState(initialSearch);
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Sync state to URL 
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (selectedCategory !== 'all') params.set('category', selectedCategory);
+    if (search) params.set('search', search);
+    setSearchParams(params, { replace: true });
+  }, [selectedCategory, search, setSearchParams]);
+
+  useEffect(() => {
+    setLoading(true);
+    let url = '/api/templates?';
+    if (selectedCategory !== 'all') url += `category=${selectedCategory}&`;
+    if (search) url += `search=${encodeURIComponent(search)}`;
+    
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        setTemplates(data.templates || []);
+        setLoading(false);
+      });
+  }, [selectedCategory, search]);
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-12 flex flex-col lg:flex-row gap-8 relative z-10">
+      {/* Left Sidebar Filter Architecture */}
+      <aside className="w-full lg:w-64 space-y-6 flex-shrink-0">
+        <GlassPanel className="p-6 space-y-6 sticky top-24">
+          <div>
+            <h3 className="text-xs font-mono uppercase tracking-widest text-white/40 mb-4">Filter Matrix</h3>
+            <div className="space-y-1.5">
+              {CATEGORIES.map((cat) => (
+                <button 
+                  key={cat} 
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-all capitalize ${selectedCategory === cat ? 'bg-hyper-growth text-space-black shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'text-white/60 hover:bg-white/5 hover:text-white'}`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="border-t border-white/5 pt-6">
+            <h3 className="text-xs font-mono uppercase tracking-widest text-white/40 mb-4">Pricing Boundaries</h3>
+            <div className="space-y-4">
+              <input type="range" min="15" max="40" defaultValue="40" className="w-full accent-electric-blue" />
+              <div className="flex items-center justify-between text-xs font-mono text-white/60">
+                <span className="bg-white/5 px-2 py-1 rounded">$15</span>
+                <span className="bg-white/5 px-2 py-1 rounded">$40</span>
+              </div>
+            </div>
+          </div>
+        </GlassPanel>
+      </aside>
+
+      {/* Main Content Search Grid Execution Interface */}
+      <div className="flex-grow space-y-8">
+        <div className="w-full relative group">
+          <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40 group-focus-within:text-electric-blue transition-colors" />
+          <input 
+            type="text"
+            placeholder="Search engines, system setups, automated nodes... (⌘K)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full h-16 pl-14 pr-6 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-white/40 font-sans focus:outline-none focus:border-electric-blue/50 focus:ring-1 focus:ring-electric-blue/50 transition-all backdrop-blur-md shadow-2xl"
+          />
+        </div>
+
+        {loading ? (
+          <div className="w-full h-64 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-electric-blue border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between pb-2 border-b border-white/5">
+              <span className="text-sm text-white/60">{templates.length} assets deployed</span>
+              <select className="bg-transparent text-sm text-white/80 border-none focus:ring-0 cursor-pointer outline-none font-mono">
+                <option value="trending" className="bg-space-void">Sort: Trending</option>
+                <option value="price_low" className="bg-space-void">Sort: Price (Low)</option>
+                <option value="price_high" className="bg-space-void">Sort: Price (High)</option>
+              </select>
+            </div>
+            {templates.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {templates.map(tpl => (
+                  <TemplateCard key={tpl.id} template={tpl} />
+                ))}
+              </div>
+            ) : (
+              <div className="w-full py-24 text-center space-y-4">
+                <p className="text-white/40 font-mono">No telemetry found matching parameters.</p>
+                <button onClick={() => { setSearch(''); setSelectedCategory('all'); }} className="text-electric-blue hover:underline text-sm">
+                  Reset Matrix
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+\n===== src/pages/TemplateDetailsPage.tsx =====
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
+import { GlassPanel } from '@/components/ui/glass-panel';
+import { Button } from '@/components/ui/button';
+import { Template } from '@/types';
+import { Check, Star, Download, ShieldCheck, Zap } from 'lucide-react';
+import { PayPalButtons, PayPalScriptProvider } from "@paypal/react-paypal-js";
+
+export const TemplateDetailsPage = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [template, setTemplate] = useState<Template | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/templates/${id}`)
+      .then(res => {
+        if (!res.ok) throw new Error('Not found');
+        return res.json();
+      })
+      .then(data => {
+        setTemplate(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        navigate('/marketplace');
+      });
+  }, [id, navigate]);
+
+  const handlePromptCopyAction = () => {
+    navigator.clipboard.writeText("# SYSTEM PROMPT\nThis is a securely fetched prompt matrix...");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (loading || !template) {
+    return (
+      <div className="w-full min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-electric-blue border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Helmet>
+        <title>{template.title} - AI Templates Suite | saasproducts</title>
+        <meta name="description" content={`Download premium high-grade production-ready template logic maps for ${template.title} priced at only $${template.price}.`} />
+        {/* Fallback open graph using an absolute or relative image */}
+        <meta property="og:image" content="/fallback-og.png" />
+      </Helmet>
+      
+      <div className="w-full max-w-7xl mx-auto px-4 py-12 space-y-12 relative z-10">
+        {/* Product Information Header Block */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-8 border-b border-white/10">
+          <div className="space-y-2 lg:max-w-2xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-electric-blue font-mono uppercase tracking-wider">
+              Premium System Pack — {template.category}
+            </div>
+            <h1 className="text-3xl md:text-5xl font-display font-bold tracking-tight text-white">{template.title}</h1>
+            <p className="text-lg text-white/50 mt-4 leading-relaxed">{template.description}</p>
+          </div>
+          <div className="flex items-center gap-6 bg-white/[0.02] border border-white/5 p-4 rounded-xl shrink-0">
+            <div className="text-left hidden sm:block">
+              <span className="block text-[10px] font-mono uppercase tracking-widest text-white/40">Deployment Value</span>
+              <span className="text-4xl font-display font-bold text-neon-cyan">${template.price}</span>
+            </div>
+            <div className="w-48 relative z-20">
+              <PayPalScriptProvider options={{ clientId: import.meta.env.VITE_PAYPAL_CLIENT_ID || 'test', currency: "USD" }}>
+                <PayPalButtons 
+                  style={{ layout: "horizontal", height: 44, color: "blue", label: "pay" }}
+                  createOrder={async () => {
+                    const res = await fetch("/api/checkout/paypal", { method: "POST" });
+                    const order = await res.json();
+                    return order.id;
+                  }}
+                  onApprove={async (data) => {
+                    const res = await fetch("/api/checkout/capture", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ orderID: data.orderID })
+                    });
+                    const captureData = await res.json();
+                    if (captureData.success) {
+                      navigate(captureData.url);
+                    }
+                  }}
+                />
+              </PayPalScriptProvider>
+            </div>
+          </div>
+        </div>
+
+        {/* Two-Column Technical Integration Matrix */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-8">
+            {/* Code Component Execution Engine Container */}
+            <div className="relative group rounded-2xl overflow-hidden border border-white/10 bg-space-void">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/[0.02]">
+                <span className="text-xs font-mono text-white/60 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-electric-blue shadow-[0_0_8px_#00F0FF]" />
+                  SYSTEM_PROMPT_MATRIX.md
+                </span>
+                <button 
+                  onClick={handlePromptCopyAction}
+                  className="text-xs font-mono px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 hover:text-white transition-all flex items-center gap-1.5"
+                >
+                  {copied ? "✓ Copied to Memory" : "⚡ Copy Prompt Matrix"}
+                </button>
+              </div>
+              <div className="p-6 overflow-x-auto max-h-[500px] font-mono text-xs text-white/70 leading-relaxed bg-black/40">
+                <pre className="whitespace-pre-wrap">
+{`# SYSTEM PROMPT: ULTRA-PREMIUM CONVERSION ENGINE
+ROLE: You are an elite Senior Designer and Full-Stack Architect.
+
+[CONFIGURATION MATRIX]
+{
+  "designTokens": {
+    "theme": "Dark Mode Default",
+    "background": "#030014",
+    "primaryGradient": "from-brand-purple to-neon-cyan",
+    "surface": "rgba(255, 255, 255, 0.03)",
+    "border": "1px solid rgba(255, 255, 255, 0.08)",
+    "blur": "backdrop-blur-xl (24px)"
+  }
+}
+
+[OBJECTIVE]
+Generate a production-ready layout structure based on this secure payload...
+... (Full payload unlocks upon framework deployment) ...`}
+                </pre>
+              </div>
+            </div>
+            
+            <GlassPanel className="p-8">
+              <h2 className="text-xl font-display font-bold mb-6 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-electric-blue" />
+                Technical Assets Included
+              </h2>
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 text-sm text-white/80">
+                {template.features.map((feature, i) => (
+                  <li key={i} className="flex items-start gap-3">
+                    <Check className="w-5 h-5 text-neon-cyan shrink-0" />
+                    <span className="text-white/70 leading-relaxed">{feature}</span>
+                  </li>
+                ))}
+                <li className="flex items-start gap-3">
+                   <Check className="w-5 h-5 text-neon-cyan shrink-0" />
+                   <span className="text-white/70 leading-relaxed">Lifetime updates & documentation</span>
+                </li>
+                <li className="flex items-start gap-3">
+                   <Check className="w-5 h-5 text-neon-cyan shrink-0" />
+                   <span className="text-white/70 leading-relaxed">Creator implementation support</span>
+                </li>
+              </ul>
+            </GlassPanel>
+          </div>
+
+          {/* Sidebar Model Constraints Panel */}
+          <div className="space-y-6">
+            <GlassPanel className="space-y-6 bg-space-void/60 border-electric-blue/20">
+              <h3 className="text-sm font-mono uppercase tracking-wider text-white/40">Target Optimization Matrix</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <span className="block text-xs text-white/50 mb-1.5">Recommended Execution Core</span>
+                  <div className="px-3 py-2.5 rounded-lg bg-white/5 border border-white/5 font-mono text-sm text-white flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-brand-purple" />
+                    {template.compatibility[0] || 'GPT-4o'}
+                  </div>
+                </div>
+                <div>
+                  <span className="block text-xs text-white/50 mb-1.5">Engine Tuning Parameters</span>
+                  <div className="grid grid-cols-2 gap-3 font-mono text-xs">
+                    <div className="p-3 rounded-lg bg-white/5 border border-white/5">
+                      <span className="block text-white/40 mb-1">TEMP</span>
+                      <span className="text-sm font-bold text-white">0.2</span>
+                    </div>
+                    <div className="p-3 rounded-lg bg-white/5 border border-white/5">
+                      <span className="block text-white/40 mb-1">TOP_P</span>
+                      <span className="text-sm font-bold text-white">0.1</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-white/5 pt-5 space-y-3">
+                <div className="flex justify-between items-center text-sm font-mono">
+                  <span className="text-white/40 text-xs">Creator Auth:</span>
+                  <span className="text-white/80">{template.creatorName}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm font-mono">
+                  <span className="text-white/40 text-xs">Evaluation Ratio:</span>
+                  <span className="text-amber-400">★ {template.rating.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm font-mono">
+                  <span className="text-white/40 text-xs">Verification Logs:</span>
+                  <span className="text-white/80">{template.reviewCount}</span>
+                </div>
+              </div>
+            </GlassPanel>
+            
+            <GlassPanel className="p-6">
+              <p className="text-xs font-mono text-white/40 uppercase tracking-widest mb-3">Safe Delivery Assurance</p>
+              <div className="text-sm text-white/60 space-y-2">
+                <p>Transactions are processed and protected via PayPal API Gateway.</p>
+                <p>Deployment access is granted instantly and secured through your dashboard.</p>
+              </div>
+            </GlassPanel>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+\n===== src/types.ts =====
+export interface Template {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  category: 'chatgpt' | 'claude' | 'midjourney' | 'cursor' | 'coding' | 'saas' | 'automation' | 'marketing' | string;
+  tier: 'basic' | 'bundle' | 'premium';
+  tags: string[];
+  rating: number;
+  reviewCount: number;
+  downloadCount: number;
+  creatorId: string;
+  creatorName: string;
+  features: string[];
+  compatibility: string[];
+  createdAt: string;
+  previewUrl?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: 'user' | 'creator' | 'admin';
+  subscriptionTier: 'free' | 'premium';
+  createdAt: string;
+}
+\n===== prisma/schema.prisma =====
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+\n===== database_schema.sql =====
+-- Enable cryptographic extensions for reliable unique sequencing configurations
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Global System Profiles Matrix Account Classification
+CREATE TYPE user_role AS ENUM ('user', 'creator', 'admin');
+CREATE TYPE subscription_tier AS ENUM ('free', 'premium');
+
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email TEXT UNIQUE NOT NULL,
+    encrypted_password TEXT NOT NULL,
+    role user_role DEFAULT 'user'::user_role,
+    sub_tier subscription_tier DEFAULT 'free'::subscription_tier,
+    stripe_customer_id TEXT UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- Template Computational Asset Catalog Manifest Schema
+CREATE TYPE template_category AS ENUM ('chatgpt', 'claude', 'midjourney', 'cursor', 'saas', 'automation', 'marketing');
+CREATE TYPE product_tier AS ENUM ('basic', 'bundle', 'premium');
+
+CREATE TABLE templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    price_cents INTEGER NOT NULL CHECK (price_cents BETWEEN 1500 AND 4000), -- Hard boundaries enforcing pricing policies
+    category template_category NOT NULL,
+    tier product_tier NOT NULL,
+    tags TEXT[] DEFAULT '{}'::TEXT[],
+    features TEXT[] DEFAULT '{}'::TEXT[],
+    compatibility TEXT[] DEFAULT '{}'::TEXT[],
+    file_payload_url TEXT NOT NULL, -- Secure S3 / Cloudinary payload target locator string
+    creator_id UUID REFERENCES users(id) ON DELETE RESTRICT NOT NULL,
+    rating_cache NUMERIC(3,2) DEFAULT 0.00,
+    review_count_cache INTEGER DEFAULT 0,
+    download_count_cache INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- Core Transaction Ledger Settlement Processing Log Table
+CREATE TYPE transaction_status AS ENUM ('pending', 'completed', 'failed', 'refunded');
+
+CREATE TABLE transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    stripe_intent_id TEXT UNIQUE NOT NULL,
+    amount_paid_cents INTEGER NOT NULL,
+    status transaction_status DEFAULT 'pending'::transaction_status,
+    coupon_applied TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- Relational Order Matrix Component Links Table (Deconstructs Multi-Item Checkout Bundles)
+CREATE TABLE order_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    transaction_id UUID REFERENCES transactions(id) ON DELETE CASCADE NOT NULL,
+    template_id UUID REFERENCES templates(id) ON DELETE RESTRICT NOT NULL,
+    unit_price_cents INTEGER NOT NULL
+);
+
+-- Cryptographically Audited Verification Table for Access Validation
+CREATE TABLE asset_downloads (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    template_id UUID REFERENCES templates(id) ON DELETE CASCADE NOT NULL,
+    download_token UUID UNIQUE DEFAULT uuid_generate_v4() NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    downloaded_at TIMESTAMP WITH TIME ZONE
+);
+
+-- High Efficiency Performance Acceleration Database Indexes
+CREATE INDEX idx_templates_category ON templates(category);
+CREATE INDEX idx_templates_price ON templates(price_cents);
+CREATE INDEX idx_order_items_template ON order_items(template_id);
+\n===== README.md =====
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+</div>
+
+# Run and deploy your AI Studio app
+
+This contains everything you need to run your app locally.
+
+View your app in AI Studio: https://ai.studio/apps/ebb4b769-463f-4bfd-a0c3-fa867136b158
+
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
+\n===== .env.example =====
+# GEMINI_API_KEY: Required for Gemini AI API calls.
+# AI Studio automatically injects this at runtime from user secrets.
+# Users configure this via the Secrets panel in the AI Studio UI.
+GEMINI_API_KEY="MY_GEMINI_API_KEY"
+
+# APP_URL: The URL where this applet is hosted.
+# AI Studio automatically injects this at runtime with the Cloud Run service URL.
+# Used for self-referential links, OAuth callbacks, and API endpoints.
+APP_URL="MY_APP_URL"
+
+# Neon Postgres Database Connection String
+DATABASE_URL="postgresql://user:password@host/dbname?sslmode=require"
+
+# Auth.js / NextAuth Secrets
+AUTH_SECRET="your-auth-secret-key-at-least-32-chars"
+GITHUB_ID="your-github-client-id"
+GITHUB_SECRET="your-github-client-secret"

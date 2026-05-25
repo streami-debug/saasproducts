@@ -1,0 +1,6 @@
+{
+  "name": "saasproducts Marketplace",
+  "description": "A premium, full-stack AI template and SaaS launch kit marketplace featuring glassmorphism design and conversion-focused bundles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
