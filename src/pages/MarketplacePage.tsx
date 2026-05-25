@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { GlassPanel } from '@/components/ui/glass-panel';
 import { TemplateCard } from '@/components/marketplace/template-card';
 import { Template } from '@/types';
 import { Search } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { getMarketplaceSEO } from '@/lib/seo';
 
 const CATEGORIES = ['all', 'chatgpt', 'claude', 'midjourney', 'cursor', 'saas', 'automation', 'marketing', 'coding'];
 
 export const MarketplacePage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const seo = getMarketplaceSEO();
   
   const initialCategory = searchParams.get('category') || 'all';
   const initialSearch = searchParams.get('search') || '';
@@ -40,7 +43,18 @@ export const MarketplacePage = () => {
   }, [selectedCategory, search, maxPrice]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-12 flex flex-col lg:flex-row gap-8 relative z-10">
+    <>
+      <Helmet>
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <meta name="keywords" content={seo.keywords?.join(', ')} />
+        <link rel="canonical" href={seo.canonical} />
+        <meta property="og:title" content={seo.ogTitle} />
+        <meta property="og:description" content={seo.ogDescription} />
+        <meta property="og:type" content={seo.ogType} />
+        <meta name="robots" content={seo.robots} />
+      </Helmet>
+      <div className="max-w-7xl mx-auto px-4 py-12 flex flex-col lg:flex-row gap-8 relative z-10">
       {/* Left Sidebar Filter Architecture */}
       <aside className="w-full lg:w-64 space-y-6 flex-shrink-0">
         <GlassPanel className="p-6 space-y-6 sticky top-24">
@@ -118,5 +132,6 @@ export const MarketplacePage = () => {
         )}
       </div>
     </div>
+    </>
   );
 };

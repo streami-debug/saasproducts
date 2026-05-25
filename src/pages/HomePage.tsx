@@ -1,9 +1,11 @@
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { Button } from '@/components/ui/button';
 import { GlassPanel } from '@/components/ui/glass-panel';
 import { TemplateCard } from '@/components/marketplace/template-card';
 import { Template } from '@/types';
+import { getHomepageSEO, getOrganizationStructuredData } from '@/lib/seo';
 
 // Structural high-demand data assets mapped to the required catalog parameters
 const HOMEPAGE_CATALOG: { hero: Template; trending: Template[]; premium: Template[] } = {
@@ -116,8 +118,23 @@ const HOMEPAGE_CATALOG: { hero: Template; trending: Template[]; premium: Templat
 };
 
 export const HomePage = () => {
+  const seo = getHomepageSEO();
+  const orgSchema = getOrganizationStructuredData();
+
   return (
-    <div className="w-full bg-space-black text-white space-y-32 pb-32 overflow-hidden relative z-10">
+    <>
+      <Helmet>
+        <title>{seo.title}</title>
+        <meta name="description" content={seo.description} />
+        <meta name="keywords" content={seo.keywords?.join(', ')} />
+        <link rel="canonical" href={seo.canonical} />
+        <meta property="og:title" content={seo.ogTitle} />
+        <meta property="og:description" content={seo.ogDescription} />
+        <meta property="og:type" content={seo.ogType} />
+        <meta name="robots" content={seo.robots} />
+        <script type="application/ld+json">{JSON.stringify(orgSchema)}</script>
+      </Helmet>
+      <div className="w-full bg-space-black text-white space-y-32 pb-32 overflow-hidden relative z-10">
       
       {/* SECTION 1: HERO CONTAINER AREA */}
       <section className="relative pt-24 px-4 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
@@ -238,5 +255,6 @@ export const HomePage = () => {
         </div>
       </section>
     </div>
+    </>
   );
 };
